@@ -131,7 +131,7 @@ const TwitchClient = (): TwitchClient => {
         },
         async deleteSubscription(subscriptionId) {
             const res = await twitchRequester(async (token) =>
-                await fetch(`https://api.twitch.tv/helix/subscriptions?id=${subscriptionId}`, {
+                await fetch(`https://api.twitch.tv/helix/eventsub/subscriptions?id=${subscriptionId}`, {
                     method: "DELETE",
                     headers: {
                         "Authorization": `Bearer ${token}`,
