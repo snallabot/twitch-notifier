@@ -155,6 +155,7 @@ router.post("/events",
             } else {
                 const configuration = sortedEvents[0]
                 const titleKeyword = configuration.title_keyword
+                console.log(`broadcast title: ${broadcastTitle} titleKeyword: ${titleKeyword}`)
                 if (broadcastTitle.toLowerCase().includes(titleKeyword.toLowerCase())) {
                     await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/post", {
                         method: "POST",
