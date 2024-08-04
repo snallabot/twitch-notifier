@@ -61,6 +61,10 @@ function verifyMessage(hmac: string, verifySignature: string) {
     return timingSafeEqual(Buffer.from(hmac), Buffer.from(verifySignature));
 }
 
+function createTwitchUrl(broadcasterLogin: string) {
+    return `https://www.twitch.tv/${broadcasterLogin}`
+}
+
 const twitchClient = createTwitchClient()
 
 type BroadcastConfigurationEvent = { channel_id: string, role?: string, id: string, timestamp: string, title_keyword: string }
@@ -81,10 +85,11 @@ type TwitchSubscription = { data: Array<SubscriptionInfo>, total: number, total_
 
 type AddTwitchChannelRequest = { discord_server: string, twitch_url: string }
 type RemoveTwitchChannelRequest = { discord_server: string, twitch_url: string }
+type ListTwitchRequest = { discord_server: string }
 
 type SubscriptionResponse = { data: Array<{ id: string, status: string, type: string, version: string, cost: number, condition: { broadcaster_user_id: string }, transport: { method: string, callback: string }, created_at: string }>, total: number, total_cost: number, max_total_cost: number }
 
-type SubscriptionDoc = { subscriptionId: string, servers: { [key: string]: { subscribed: boolean } } }
+type SubscriptionDoc = { subscriptionId: string, broadcasterLogin: string, servers: { [key: string]: { subscribed: boolean } } }
 
 router.post("/events",
     async (ctx, next) => {
@@ -160,7 +165,7 @@ router.post("/events",
                     await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/post", {
                         method: "POST",
                         body: JSON.stringify({
-                            key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: `https://www.twitch.tv/${broadcasterName}`
+                            key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: createTwitchUrl(broadcasterName)
                         }),
                         headers: {
                             "Content-Type": "application/json"
@@ -175,6 +180,7 @@ router.post("/events",
         const request = ctx.request.body as AddTwitchChannelRequest
         const broadcasterInformation = await twitchClient.retrieveBroadcasterInformation(request.twitch_url)
         const broadcasterId = broadcasterInformation.data[0].id
+        const broadcasterLogin = broadcasterInformation.data[0].login
         const currentSubscriptionDoc = await db.collection("twitch_notifiers").doc(broadcasterId).get()
         if (currentSubscriptionDoc.exists) {
             const currentSubscription = currentSubscriptionDoc.data()
@@ -193,6 +199,7 @@ router.post("/events",
             }
             await db.collection("twitch_notifiers").doc(broadcasterId).set({
                 subscriptionId: subscriptionId,
+                broadcasterLogin: broadcasterLogin,
                 servers: {
                     [request.discord_server]: { subscribed: true }
                 }
@@ -219,6 +226,16 @@ router.post("/events",
             throw new Error(`Twitch notifier does not exist for ${request.twitch_url}. It may never have been added`)
         }
         ctx.status = 200
+    }).post("/listTwitchNotifiers", async (ctx, next) => {
+        const request = ctx.request.body as ListTwitchRequest
+        const discordServer = request.discord_server
+        const notifiers = await db.collection("twitch_notifiers").where(`servers.${discordServer}.subscribed`, "==", true).get()
+        const currentNotifiers = notifiers.docs.map(d => {
+            const broadcasterLogin = (d.data() as SubscriptionDoc).broadcasterLogin
+            return createTwitchUrl(broadcasterLogin)
+        })
+        ctx.status = 200
+        ctx.response.body = currentNotifiers
     })
 
 
