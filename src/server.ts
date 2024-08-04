@@ -160,11 +160,11 @@ router.post("/events",
                     await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/post", {
                         method: "POST",
                         body: JSON.stringify({
-                            key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: `https://www.twitch.tv/${broadcasterName}`,
-                            headers: {
-                                "Content-Type": "application/json"
-                            }
-                        })
+                            key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: `https://www.twitch.tv/${broadcasterName}`
+                        }),
+                        headers: {
+                            "Content-Type": "application/json"
+                        }
                     })
                 }
             }
