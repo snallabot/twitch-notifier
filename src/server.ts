@@ -139,6 +139,7 @@ router.post("/events",
         }
         const subscription = subscriptionDoc.data() as SubscriptionDoc
         const subscribedServers = Object.entries(subscription.servers).filter(entry => entry[1].subscribed).map(entry => entry[0])
+        console.log(subscribedServers)
         await Promise.all(subscribedServers.map(async (server) => {
             const res = await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/query", {
                 method: "POST",
