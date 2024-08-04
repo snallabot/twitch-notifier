@@ -53,8 +53,9 @@ const TwitchClient = (): TwitchClient => {
         const res = await fetcher(token)
         if (res.status === 401) {
             await refreshToken()
+            return await fetcher(token)
         }
-        return await fetcher(token)
+        return res
     }
     return {
         async retrieveBroadcasterInformation(twitchUrl: string) {
