@@ -6,6 +6,7 @@ import { initializeApp, cert } from "firebase-admin/app"
 import { getFirestore, Firestore, FieldValue } from "firebase-admin/firestore"
 import { subscribe } from "diagnostics_channel"
 import { createTwitchClient, getSecret } from "./twitch_client"
+import NodeCache from "node-cache"
 
 const app = new Koa()
 const router = new Router()
@@ -91,6 +92,10 @@ type SubscriptionResponse = { data: Array<{ id: string, status: string, type: st
 
 type SubscriptionDoc = { subscriptionId: string, broadcasterLogin: string, servers: { [key: string]: { subscribed: boolean } } }
 
+
+const CACHE_TTL = 10 * 60 // in seconds
+const messageCache = new NodeCache({ stdTTL: CACHE_TTL })
+
 async function handleStreamEvent(twitchEvent: StreamUpEvent) {
     const twitchUser = twitchEvent.event.broadcaster_user_id
     const channelInformation = await twitchClient.retrieveChannelInformation(twitchUser)
@@ -133,7 +138,6 @@ async function handleStreamEvent(twitchEvent: StreamUpEvent) {
             }
         }
     }))
-
 }
 
 router.post("/events",
@@ -178,7 +182,14 @@ router.post("/events",
         const twitchEvent = ctx.request.body as StreamUpEvent
         ctx.status = 200
         await next()
+        const messageId = ctx.request.get(TWITCH_MESSAGE_ID)
+        const messageSeen = messageCache.get(messageId)
+        if (messageSeen) {
+            console.log(`duplicate messsage found ${messageId}`)
+            return
+        }
         handleStreamEvent(twitchEvent)
+        messageCache.set(messageId, { seen: true })
     }).post("/addTwitchNotifier", async (ctx, next) => {
         const request = ctx.request.body as AddTwitchChannelRequest
         const broadcasterInformation = await twitchClient.retrieveBroadcasterInformation(request.twitch_url)
