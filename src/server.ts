@@ -96,6 +96,50 @@ type SubscriptionDoc = { subscriptionId: string, broadcasterLogin: string, serve
 const CACHE_TTL = 10 * 60 // in seconds
 const messageCache = new NodeCache({ stdTTL: CACHE_TTL })
 
+async function handleStreamEvent(twitchEvent: StreamUpEvent) {
+    const twitchUser = twitchEvent.event.broadcaster_user_id
+    const channelInformation = await twitchClient.retrieveChannelInformation(twitchUser)
+    const broadcaster = channelInformation.data[0]
+    const broadcasterName = broadcaster.broadcaster_name
+    const broadcastTitle = broadcaster.title
+    const subscriptionDoc = await db.collection("twitch_notifiers").doc(twitchUser).get()
+    if (!subscriptionDoc.exists) {
+        throw new Error(`Subscription for ${twitchUser} does not exist!`)
+    }
+    const subscription = subscriptionDoc.data() as SubscriptionDoc
+    const subscribedServers = Object.entries(subscription.servers).filter(entry => entry[1].subscribed).map(entry => entry[0])
+    console.log(subscribedServers)
+    await Promise.all(subscribedServers.map(async (server) => {
+        const res = await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/query", {
+            method: "POST",
+            body: JSON.stringify({ event_types: ["BROADCAST_CONFIGURATION"], key: server, after: 0, limit: 1 }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        })
+        const broadcastResponse = await res.json() as BroadcastConfigurationResponse
+        const sortedEvents = broadcastResponse.BROADCAST_CONFIGURATION.sort((a: BroadcastConfigurationEvent, b: BroadcastConfigurationEvent) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        if (sortedEvents.length === 0) {
+            console.error(`${server} is not configured for Broadcasts`)
+        } else {
+            const configuration = sortedEvents[0]
+            const titleKeyword = configuration.title_keyword
+            console.log(`broadcast title: ${broadcastTitle} titleKeyword: ${titleKeyword}`)
+            if (broadcastTitle.toLowerCase().includes(titleKeyword.toLowerCase())) {
+                await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/post", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: createTwitchUrl(broadcasterName)
+                    }),
+                    headers: {
+                        "Content-Type": "application/json"
+                    }
+                })
+            }
+        }
+    }))
+}
+
 router.post("/events",
     async (ctx, next) => {
         const secret = getSecret()
@@ -144,47 +188,7 @@ router.post("/events",
             console.log(`duplicate messsage found ${messageId}`)
             return
         }
-        const twitchUser = twitchEvent.event.broadcaster_user_id
-        const channelInformation = await twitchClient.retrieveChannelInformation(twitchUser)
-        const broadcaster = channelInformation.data[0]
-        const broadcasterName = broadcaster.broadcaster_name
-        const broadcastTitle = broadcaster.title
-        const subscriptionDoc = await db.collection("twitch_notifiers").doc(twitchUser).get()
-        if (!subscriptionDoc.exists) {
-            throw new Error(`Subscription for ${twitchUser} does not exist!`)
-        }
-        const subscription = subscriptionDoc.data() as SubscriptionDoc
-        const subscribedServers = Object.entries(subscription.servers).filter(entry => entry[1].subscribed).map(entry => entry[0])
-        console.log(subscribedServers)
-        await Promise.all(subscribedServers.map(async (server) => {
-            const res = await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/query", {
-                method: "POST",
-                body: JSON.stringify({ event_types: ["BROADCAST_CONFIGURATION"], key: server, after: 0, limit: 1 }),
-                headers: {
-                    "Content-Type": "application/json"
-                }
-            })
-            const broadcastResponse = await res.json() as BroadcastConfigurationResponse
-            const sortedEvents = broadcastResponse.BROADCAST_CONFIGURATION.sort((a: BroadcastConfigurationEvent, b: BroadcastConfigurationEvent) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-            if (sortedEvents.length === 0) {
-                console.error(`${server} is not configured for Broadcasts`)
-            } else {
-                const configuration = sortedEvents[0]
-                const titleKeyword = configuration.title_keyword
-                console.log(`broadcast title: ${broadcastTitle} titleKeyword: ${titleKeyword}`)
-                if (broadcastTitle.toLowerCase().includes(titleKeyword.toLowerCase())) {
-                    await fetch("https://snallabot-event-sender-b869b2ccfed0.herokuapp.com/post", {
-                        method: "POST",
-                        body: JSON.stringify({
-                            key: server, event_type: "MADDEN_BROADCAST", delivery: "EVENT_SOURCE", title: broadcastTitle, video: createTwitchUrl(broadcasterName)
-                        }),
-                        headers: {
-                            "Content-Type": "application/json"
-                        }
-                    })
-                }
-            }
-        }))
+        handleStreamEvent(twitchEvent)
         messageCache.set(messageId, { seen: true })
     }).post("/addTwitchNotifier", async (ctx, next) => {
         const request = ctx.request.body as AddTwitchChannelRequest
